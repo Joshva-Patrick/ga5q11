@@ -58,8 +58,10 @@ would raise or lower your confidence. Order hypotheses by confidence, highest fi
 
 UPDATE_SYSTEM_PROMPT = """You are an SRE incident triage assistant.
 You previously proposed hypotheses. New diagnostic evidence has arrived.
-Return ONLY JSON in the same shape as before, with updated confidences and
-evidence_gaps (remove gaps that are now resolved). Do not invent tool names.
+Return ONLY a JSON OBJECT of the exact shape {"hypotheses": [...]} -- the
+SAME shape as before. Do NOT return a bare JSON array. Update confidences
+and evidence_gaps (remove gaps that are now resolved). Do not invent tool
+names.
 """
 
 

@@ -121,8 +121,29 @@ def _call_ollama(system: str, user: str) -> str:
     return data["response"]
 
 
+def _extract_json(raw: str):
+    """Smaller/local models sometimes ignore 'return ONLY JSON' and add
+    prose, or return a bare array instead of the requested object. Recover
+    gracefully instead of crashing the whole run."""
+    cleaned = _strip_fences(raw)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+    # Fallback: grab the first {...} or [...] block in the text.
+    match = re.search(r"(\{.*\}|\[.*\])", cleaned, re.DOTALL)
+    if not match:
+        raise ValueError(f"Could not extract JSON from model output: {raw!r}")
+    return json.loads(match.group(1))
+
+
 def call_llm_json(system: str, user: str) -> dict:
-    """Call whichever backend is configured; return parsed JSON dict."""
+    """Call whichever backend is configured; return parsed JSON dict.
+
+    Always returns a dict with a "hypotheses" key: if the model returned a
+    bare JSON array (some smaller models drop the wrapper object despite
+    instructions), it's normalized into {"hypotheses": [...]}.
+    """
     if os.environ.get("ANTHROPIC_API_KEY"):
         raw = _call_anthropic(system, user)
     elif os.environ.get("NVIDIA_API_KEY"):
@@ -137,4 +158,7 @@ def call_llm_json(system: str, user: str) -> dict:
             "NVIDIA_API_KEY for NVIDIA NIM, GEMINI_API_KEY for Google Gemini, "
             "or OLLAMA_HOST/USE_OLLAMA for a local free model."
         )
-    return json.loads(_strip_fences(raw))
+    parsed = _extract_json(raw)
+    if isinstance(parsed, list):
+        parsed = {"hypotheses": parsed}
+    return parsed
