@@ -3,8 +3,9 @@ Pluggable LLM client. Model choice earns no marks, so this defaults to
 whatever is cheapest/available:
 
   1. ANTHROPIC_API_KEY set        -> Anthropic API (claude-sonnet-4-6... or override)
-  2. OLLAMA_HOST set / localhost  -> local Ollama model (free, offline)
-  3. neither                      -> raises with setup instructions
+  2. GEMINI_API_KEY set           -> Google Gemini API (has a free tier, good for Render)
+  3. OLLAMA_HOST set / localhost  -> local Ollama model (free, offline)
+  4. none                         -> raises with setup instructions
 
 call_llm_json() forces the model to return ONLY JSON (no prose, no
 markdown fences) so the agent can parse it deterministically.
@@ -50,6 +51,31 @@ def _call_anthropic(system: str, user: str) -> str:
     return "".join(b["text"] for b in data["content"] if b["type"] == "text")
 
 
+def _call_gemini(system: str, user: str) -> str:
+    api_key = os.environ["GEMINI_API_KEY"]
+    model = os.environ.get("AGENT_MODEL", "gemini-2.0-flash")
+    url = (
+        f"https://generativelanguage.googleapis.com/v1beta/models/"
+        f"{model}:generateContent?key={api_key}"
+    )
+    body = json.dumps(
+        {
+            "system_instruction": {"parts": [{"text": system}]},
+            "contents": [{"role": "user", "parts": [{"text": user}]}],
+            "generationConfig": {
+                "temperature": 0.2,
+                "responseMimeType": "application/json",
+            },
+        }
+    ).encode()
+    req = urllib.request.Request(
+        url, data=body, headers={"content-type": "application/json"}
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = json.loads(resp.read())
+    return data["candidates"][0]["content"]["parts"][0]["text"]
+
+
 def _call_ollama(system: str, user: str) -> str:
     host = os.environ.get("OLLAMA_HOST", "http://localhost:11434")
     model = os.environ.get("AGENT_MODEL", "llama3.1")
@@ -70,11 +96,14 @@ def call_llm_json(system: str, user: str) -> dict:
     """Call whichever backend is configured; return parsed JSON dict."""
     if os.environ.get("ANTHROPIC_API_KEY"):
         raw = _call_anthropic(system, user)
+    elif os.environ.get("GEMINI_API_KEY"):
+        raw = _call_gemini(system, user)
     elif os.environ.get("USE_OLLAMA") or os.environ.get("OLLAMA_HOST"):
         raw = _call_ollama(system, user)
     else:
         raise RuntimeError(
             "No LLM configured. Set ANTHROPIC_API_KEY for the Anthropic API, "
-            "or OLLAMA_HOST/USE_OLLAMA for a local free model."
+            "GEMINI_API_KEY for Google Gemini, or OLLAMA_HOST/USE_OLLAMA for "
+            "a local free model."
         )
     return json.loads(_strip_fences(raw))
