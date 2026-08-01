@@ -1,0 +1,8 @@
+[09:14] PagerDuty: HIGH - checkout-service p99 latency > 5s
+[09:15] on-call: looking now
+[09:16] on-call: seeing a lot of "connection timeout" errors in checkout-service logs
+[09:17] bot: error rate for checkout-service climbing, now 40%+
+[09:18] on-call: no obvious spike in traffic on the dashboard
+[09:19] on-call: db team says nothing changed on their end today
+[09:20] on-call: not sure if this is a deploy issue or something else, checking recent releases
+[09:22] on-call: can't tell if pool is exhausted from the dashboard alone, need to check directly
