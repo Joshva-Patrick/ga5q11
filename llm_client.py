@@ -3,9 +3,10 @@ Pluggable LLM client. Model choice earns no marks, so this defaults to
 whatever is cheapest/available:
 
   1. ANTHROPIC_API_KEY set        -> Anthropic API (claude-sonnet-4-6... or override)
-  2. GEMINI_API_KEY set           -> Google Gemini API (has a free tier, good for Render)
-  3. OLLAMA_HOST set / localhost  -> local Ollama model (free, offline)
-  4. none                         -> raises with setup instructions
+  2. NVIDIA_API_KEY set           -> NVIDIA NIM API (OpenAI-compatible, free tier)
+  3. GEMINI_API_KEY set           -> Google Gemini API (has a free tier, good for Render)
+  4. OLLAMA_HOST set / localhost  -> local Ollama model (free, offline)
+  5. none                         -> raises with setup instructions
 
 call_llm_json() forces the model to return ONLY JSON (no prose, no
 markdown fences) so the agent can parse it deterministically.
@@ -49,6 +50,34 @@ def _call_anthropic(system: str, user: str) -> str:
     with urllib.request.urlopen(req, timeout=60) as resp:
         data = json.loads(resp.read())
     return "".join(b["text"] for b in data["content"] if b["type"] == "text")
+
+
+def _call_nvidia(system: str, user: str) -> str:
+    api_key = os.environ["NVIDIA_API_KEY"]
+    # Any NIM-hosted chat model works; this one is free-tier and instruction-tuned.
+    model = os.environ.get("AGENT_MODEL", "meta/llama-3.1-8b-instruct")
+    body = json.dumps(
+        {
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
+            "temperature": 0.2,
+            "max_tokens": 1024,
+        }
+    ).encode()
+    req = urllib.request.Request(
+        "https://integrate.api.nvidia.com/v1/chat/completions",
+        data=body,
+        headers={
+            "content-type": "application/json",
+            "authorization": f"Bearer {api_key}",
+        },
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        data = json.loads(resp.read())
+    return data["choices"][0]["message"]["content"]
 
 
 def _call_gemini(system: str, user: str) -> str:
@@ -96,6 +125,8 @@ def call_llm_json(system: str, user: str) -> dict:
     """Call whichever backend is configured; return parsed JSON dict."""
     if os.environ.get("ANTHROPIC_API_KEY"):
         raw = _call_anthropic(system, user)
+    elif os.environ.get("NVIDIA_API_KEY"):
+        raw = _call_nvidia(system, user)
     elif os.environ.get("GEMINI_API_KEY"):
         raw = _call_gemini(system, user)
     elif os.environ.get("USE_OLLAMA") or os.environ.get("OLLAMA_HOST"):
@@ -103,7 +134,7 @@ def call_llm_json(system: str, user: str) -> dict:
     else:
         raise RuntimeError(
             "No LLM configured. Set ANTHROPIC_API_KEY for the Anthropic API, "
-            "GEMINI_API_KEY for Google Gemini, or OLLAMA_HOST/USE_OLLAMA for "
-            "a local free model."
+            "NVIDIA_API_KEY for NVIDIA NIM, GEMINI_API_KEY for Google Gemini, "
+            "or OLLAMA_HOST/USE_OLLAMA for a local free model."
         )
     return json.loads(_strip_fences(raw))
